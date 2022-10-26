@@ -94,7 +94,7 @@ write_delim(
   here(
     "results",
     "tables",
-    "occurrence_data.txt"
+    "01_occurrence_data.txt"
   ),
   delim = "\t"
 )
@@ -179,7 +179,7 @@ write_delim(
   here(
     "results",
     "tables",
-    "zkir_qpcr_results.txt"
+    "01_zkir_qpcr_results.txt"
   ),
   delim = "\t"
 )
@@ -269,7 +269,7 @@ ggsave(
   here(
     "results",
     "figures",
-    "wetlab_results.png"
+    "01_wetlab_results.png"
     ),
   p_all,
   device = "png",

@@ -57,7 +57,7 @@ write_delim(
   here(
     "results",
     "tables",
-    "read_stats.txt"
+    "02_read_stats.txt"
   ),
   delim = "\t"
 )
