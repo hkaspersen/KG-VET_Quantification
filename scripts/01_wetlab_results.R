@@ -160,26 +160,55 @@ quant_stats <- cfu_calc %>%
 
 # 03. Summarise ZKIR qPCR results ----
 ## Import ZKIR qPCR results
-zkir_results <- read_xlsx(here("data","ZKIR_results.xlsx")) %>%
-  filter(!saksnr %in% c("2020-01-3390",
-                        "2020-01-3391",
-                        "2020-01-3985",
-                        "2020-01-4081",
-                        "2020-01-4082")) %>%
-  mutate(ZKIR = ifelse(ZKIR == "Positive/negative?", "Negative", ZKIR)) %>%
+zkir_results <- read_xlsx(
+  here(
+    "data",
+    "ZKIR_results.xlsx"
+    )) %>%
+  filter(!saksnr %in% c(
+    "2020-01-3390",
+    "2020-01-3391",
+    "2020-01-3985",
+    "2020-01-4081",
+    "2020-01-4082"
+    )) %>%
+  mutate(
+    ZKIR = ifelse(
+      ZKIR == "Positive/negative?", 
+      "Negative",
+      ZKIR
+      )
+    )
+
+zkir_stats <- zkir_results %>%
   count(origin, ZKIR) %>%
   pivot_wider(names_from = "ZKIR",
               values_from = "n") %>%
   mutate(Total = Negative + Positive,
          Percent = round(Positive/Total * 100, 2)) %>%
   rename("Host" = origin)
+
+zkir_quant_results <- cfu_calc %>%
+  select(saksnr, origin, result, cfu_g_total) %>%
+  left_join(zkir_results[,c("saksnr","ZKIR")],
+            by = "saksnr")
   
 write_delim(
-  zkir_results,
+  zkir_stats,
   here(
     "results",
     "tables",
     "01_zkir_qpcr_results.txt"
+  ),
+  delim = "\t"
+)
+
+write_delim(
+  zkir_quant_results,
+  here(
+    "results",
+    "tables",
+    "01_zkir_quant_results.txt"
   ),
   delim = "\t"
 )
