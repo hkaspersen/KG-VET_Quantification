@@ -15,7 +15,6 @@ library(impoRt)
 library(vegan)
 library(phyloseq)
 library(patchwork)
-library(ggpubr)
 library(gridExtra)
 
 # 01. Abundance estimation Kraken ----
@@ -227,11 +226,14 @@ wilcox.test(perc_reads_assigned ~ origin,
 
 # 05. Figure ----
 ## Define palette
-palette <- c("Broiler" = colorspace::lighten("#006c89", amount = 0.5),
-             "Turkey" = colorspace::lighten("#3d6721", amount = 0.5))
+palette <- c("Broiler" = colorspace::lighten("#006c89", 
+                                             amount = 0.5),
+             "Turkey" = colorspace::lighten("#3d6721", 
+                                            amount = 0.5))
 
 ## Kraken results
-p_kraken <- ggplot(kraken_results, aes(origin, Abundance)) +
+p_kraken <- ggplot(kraken_results, 
+                   aes(origin, Abundance)) +
   geom_violin(aes(fill = origin),
               trim = FALSE) +
   stat_boxplot(geom = "errorbar", width = 0.05) +
@@ -248,7 +250,8 @@ p_kraken <- ggplot(kraken_results, aes(origin, Abundance)) +
         panel.grid = element_blank())
 
 ## StrainGE results
-p_strainge <- ggplot(strainge_data, aes(origin, `pan%`)) +
+p_strainge <- ggplot(strainge_data, 
+                     aes(origin, `pan%`)) +
   geom_violin(aes(fill = origin),
               trim = FALSE) +
   stat_boxplot(geom = "errorbar", width = 0.05) +
@@ -265,7 +268,8 @@ p_strainge <- ggplot(strainge_data, aes(origin, `pan%`)) +
         panel.grid = element_blank())
 
 ## Mapping results
-p_mapping <- ggplot(mapping_results, aes(origin, perc_reads_assigned)) +
+p_mapping <- ggplot(mapping_results, 
+                    aes(origin, perc_reads_assigned)) +
   geom_violin(aes(fill = origin),
               trim = FALSE) +
   stat_boxplot(geom = "errorbar", width = 0.05) +
@@ -296,11 +300,20 @@ stats_table <- rbind(kraken_summary,
 summary_table <- ggtexttable(stats_table,
             rows = NULL,
             theme = ttheme("blank")) %>%
-  tab_add_hline(at.row = c(1, 2), row.side = "top", linewidth = 3, linetype = 1) %>%
-  tab_add_hline(at.row = c(7), row.side = "bottom", linewidth = 3, linetype = 1)
+  tab_add_hline(at.row = c(1, 2), 
+                row.side = "top", 
+                linewidth = 3, 
+                linetype = 1) %>%
+  tab_add_hline(at.row = c(7),
+                row.side = "bottom",
+                linewidth = 3,
+                linetype = 1)
 
 p_all <- p_kraken + p_strainge + p_mapping + summary_table +
-  plot_layout(nrow = 2, ncol = 2, guides = "collect", widths = c(1.2, 1.2, 1.2, 1))
+  plot_layout(
+    nrow = 2,
+    ncol = 2,
+    guides = "collect")
 
 ggsave(
   here(
