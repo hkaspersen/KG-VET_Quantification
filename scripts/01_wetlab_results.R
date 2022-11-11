@@ -14,6 +14,7 @@ library(patchwork)
 library(impoRt)
 library(readxl)
 library(here)
+library(rstatix)
 library(tibble)
 library(readr)
 
@@ -192,7 +193,7 @@ zkir_quant_results <- cfu_calc %>%
   select(saksnr, origin, result, cfu_g_total) %>%
   left_join(zkir_results[,c("saksnr","ZKIR")],
             by = "saksnr")
-  
+
 write_delim(
   zkir_stats,
   here(
@@ -229,8 +230,25 @@ occurrence_report_kp %>%
   chisq.test(correct = FALSE)
 
 ## Wilcox test for overall difference in abundance
-wilcox.test(cfu_g_total ~ origin, data = cfu_calc, alternative = "two.sided")
+cfu_calc %>%
+  wilcox_test(cfu_g_total ~ origin, alternative = "two.sided")
 
+cfu_calc %>%
+  wilcox_effsize(cfu_g_total ~ origin)
+
+wilcox.test(
+  cfu_g_total ~ origin,
+  data = cfu_calc,
+  alternative = "two.sided",
+  exact = FALSE
+  )
+
+## Chi Squared test for difference in qPCR results
+zkir_stats %>%
+  select(Host, Positive, Total) %>%
+  column_to_rownames("Host")
+  as.matrix %>%
+  chisq.test(correct = FALSE)
 
 
 # 05. Create figure ----
