@@ -141,6 +141,8 @@ cfu_calc <- quant_results %>%
       apply(.[,10:13], 1, FUN = mean, na.rm = TRUE),
       NA
     ),
+    cfu_g_total = ifelse(rowSums(.[,10:13], na.rm = TRUE) == 0 &
+                           undiluted == 1, 10, cfu_g_total),
     log_cfu = log10(cfu_g_total)
   )
 
@@ -246,7 +248,7 @@ wilcox.test(
 ## Chi Squared test for difference in qPCR results
 zkir_stats %>%
   select(Host, Positive, Total) %>%
-  column_to_rownames("Host")
+  column_to_rownames("Host") %>%
   as.matrix %>%
   chisq.test(correct = FALSE)
 

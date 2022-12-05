@@ -11,11 +11,14 @@ library(ggplot2)
 library(ggsignif)
 library(readxl)
 library(here)
+library(tibble)
 library(impoRt)
 library(vegan)
+library(janitor)
 library(phyloseq)
 library(patchwork)
 library(gridExtra)
+library(ANCOMBC)
 
 # 01. Kraken/Bracken abundance ----
 ## Abundance estimation Bracken ----
@@ -43,39 +46,44 @@ bracken_bact <- subset_taxa(bracken_clean, Rank1 == "k__Bacteria")
 bracken_rel <- transform_sample_counts(
   bracken_bact, function(x) x*100 / sum(x))
 
-## Calculate relative abundance of phyla
-phylum_data <- tax_glom(bracken_rel,
-                        taxrank = "Rank2") %>%
+## Calculate relative abundance of orders
+order_data <- tax_glom(bracken_rel,
+                        taxrank = "Rank4") %>%
   psmelt() %>%
   mutate(Sample = sub(".+(2020.+)", "\\1", Sample)) %>%
   left_join(group_info, by = c("Sample" = "saksnr")) %>%
-  mutate(Rank2 = sub("p__", "", Rank2)) %>%
-  filter(Abundance > 0.1)
-
-## Abundance of Enterobacteriaceae ----
-ent_data <- tax_glom(bracken_rel,
-                     taxrank = "Rank5") %>%
-  psmelt() %>%
-  mutate(Sample = sub(".+(2020.+)", "\\1", Sample)) %>%
-  left_join(group_info, by = c("Sample" = "saksnr")) %>%
-  mutate(Rank5 = sub("f__", "", Rank5)) %>% 
-  filter(Rank5 == "Enterobacteriaceae")
-
-wilcox.test(Abundance ~ origin, data = ent_data, exact = FALSE)
+  mutate(Rank4 = sub("o__", "", Rank4),
+         plot_group = ifelse(Abundance >= 5, Rank4, "Other")) %>%
+  mutate(plot_group = factor(plot_group,
+                             levels = c(
+                               "Bacteroidales",
+                               "Bifidobacteriales",
+                               "Coriobacteriales",
+                               "Enterobacterales",
+                               "Eubacteriales",
+                               "Lactobacillales",
+                               "Selenomonadales",
+                               "Other"
+                             )))
 
 ## Generate abundance figure ----
-palette <- c("Broiler" = colorspace::lighten("#006c89", 
-                                             amount = 0.5),
-             "Turkey" = colorspace::lighten("#3d6721", 
-                                            amount = 0.5))
+palette <- c("Broiler" = colorspace::lighten("#006c89", amount = 0.5),
+             "Turkey" = colorspace::lighten("#3d6721", amount = 0.5))
 
-p_phylum <- ggplot(phylum_data, aes(Sample, Abundance, fill = Rank2)) +
+group_names <- c(
+  "broiler_positive" = "Broiler positive",
+  "broiler_negative" = "Broiler negative",
+  "turkey_positive" = "Turkey positive",
+  "turkey_negative" = "Turkey negative"
+)
+
+p_order <- ggplot(order_data, aes(Sample, Abundance, fill = plot_group)) +
   geom_col(position = position_fill()) +
-  scale_fill_brewer(palette = "Set3") +
   labs(x = "Samples",
        y = "Relative Abundance (%)",
        fill = NULL,
-       title = "B") +
+       title = "A") +
+  scale_fill_brewer(palette = "Set3") +
   theme_bw() +
   theme(panel.grid = element_blank(),
         axis.text.x = element_blank(),
@@ -85,88 +93,24 @@ p_phylum <- ggplot(phylum_data, aes(Sample, Abundance, fill = Rank2)) +
         axis.title = element_text(size = 10),
         legend.key.size = unit(0.3, 'cm'),
         legend.text = element_text(size = 6)) +
-  facet_wrap(~origin, scales = "free_x")
+  facet_wrap(~group, scales = "free_x", 
+             labeller = as_labeller(group_names))
 
 
-p_ent <- ggplot(ent_data, aes(origin, Abundance)) +
-  geom_violin(aes(fill = origin),
-              trim = FALSE) +
-  stat_boxplot(geom = "errorbar", width = 0.05) +
-  geom_boxplot(width = 0.05) +
-  geom_signif(comparisons = list(c("Broiler","Turkey")),
-              annotations = "~italic(p) < 0.05",
-              parse = TRUE) +
-  scale_fill_manual(values = palette) +
-  labs(y = "Relative Abundance (%)",
-       title = "C") +
-  theme_bw() +
-  theme(axis.title.x = element_blank(),
-        panel.grid = element_blank(),
-        legend.position = "none",
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        axis.text.y = element_text(size = 8),
-        axis.title = element_text(size = 10))
-
-
-## Import alpha and beta diversity figures
-load(
-  here(
-    "results",
-    "RData",
-    "alpha_div_plot.rdata"
-  )
-)
-
-load(
-  here(
-    "results",
-    "RData",
-    "beta_div_plot.rdata"
-  )
-)
-
-## Create full plot
-p_all <- p_alpha + 
-  plot_spacer() + 
-  p_phylum + 
-  p_ent + 
-  plot_spacer() + 
-  p_beta +
-  plot_layout(
-    ncol = 3, 
-    nrow = 2,
-    widths = c(
-      0.7, 0.05, 1, 0.7, 0.05, 1
-      )
-    )
-
-ggsave(
-  here(
-    "results",
-    "figures",
-    "06_microbiome_results.png"
-  ),
-  p_all,
-  device = "png",
-  units = "cm",
-  dpi = 600,
-  height = 15,
-  width = 19
-)
+p_order_nolegend <- p_order +
+  theme(legend.position = "none")
 
 
 ## Abundance of Klebsiella ----
 ### Klebsiella genus ----
-genera_data <- tax_glom(bracken_rel,
+genera_data <- tax_glom(bracken_bact,
                         taxrank = "Rank6")
 
 klebsiella_results <- psmelt(genera_data) %>%
   filter(Rank6 == "g__Klebsiella") %>%
   mutate(Sample = sub(".+-(2020-.+)", "\\1", Sample)) %>%
   select(Sample, Abundance, Rank6) %>%
-  left_join(group_info[,c("saksnr","origin","result","group","cfu_group")],
-            by = c("Sample" = "saksnr")) %>%
+  left_join(group_info, by = c("Sample" = "saksnr")) %>%
   mutate(cfu_group = ifelse(is.na(cfu_group), "Negative", cfu_group),
          cfu_group = factor(cfu_group, levels = c("Negative",
                                                   "Low",
@@ -192,6 +136,86 @@ write_delim(
   delim = "\t"
 )
 
+test_data <- klebsiella_results %>%
+  filter(result == "Positive")
+
+summary(lm(log10(Abundance) ~ log10(cfu_g_total), data = test_data))
+
+p_stats <- ggplot(test_data, aes(log10(cfu_g_total), 
+                            log10(Abundance),
+                      color = origin)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  scale_color_manual(values = palette) +
+  labs(x = "Log10 CFU/g",
+       y = "Log10 Absolute abundance",
+       title = "B") +
+  theme_bw() +
+  theme(panel.grid = element_blank())
+
+
+group_palette <- c(
+  "broiler_negative" = colorspace::lighten("#006c89", amount = 0.9),
+  "broiler_positive" = colorspace::lighten("#006c89", amount = 0.5),
+  "turkey_negative" = colorspace::lighten("#3d6721", amount = 0.9),
+  "turkey_positive" = colorspace::lighten("#3d6721", amount = 0.5)
+)
+
+p_klebs <- ggplot(klebsiella_results, aes(group, Abundance)) +
+  geom_violin(aes(fill = group),
+              trim = FALSE) +
+  stat_boxplot(geom = "errorbar", width = 0.05) +
+  geom_boxplot(width = 0.05) +
+  scale_fill_manual(values = group_palette,
+                    labels = c("Broiler negative",
+                               "Broiler positive",
+                               "Turkey negative",
+                               "Turkey positive")) +
+  labs(y = "Absolute abundance of *Klebsiella* spp.",
+       title = "C") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.title.y = ggtext::element_markdown())
+
+
+p_all_nolegend <- p_order_nolegend | (p_stats / p_klebs) +
+  plot_layout(guides = "collect")
+
+p_all <- p_order | (p_stats / p_klebs) +
+  plot_layout(guides = "collect")
+
+ggsave(
+  here(
+    "results",
+    "figures",
+    "06_relative_abundance.png"
+  ),
+  p_all_nolegend,
+  device = "png",
+  units = "cm",
+  dpi = 600,
+  height = 20,
+  width = 22
+)
+
+ggsave(
+  here(
+    "results",
+    "figures",
+    "06_relative_abundance_legend.png"
+  ),
+  p_all,
+  device = "png",
+  units = "cm",
+  dpi = 600,
+  height = 20,
+  width = 22
+)
+
+
 ### Klebsiella species ----
 klebsiella_species <- psmelt(bracken_rel) %>%
   filter(Rank6 == "g__Klebsiella") %>%
@@ -214,279 +238,206 @@ kpsc_species <- psmelt(bracken_rel) %>%
     "quasivariicola"
     ))
 
-
-
-# 02. Differential abundance analysis ----
-## Import data
-load(
-  here(
-    "results",
-    "RData",
-    
-  )
-)
-
-
-
-
-
-
-
-
-
-# 02. Abundance estimation StrainGE ----
-strainge_results <- get_data(
-  here("data",
-       "strainge"),
-  pattern = "stats.tsv",
-  delim = "\t"
-  ) %>%
-  mutate(
-    sample = sub(
-      ".+(2020.01.....)_S.+",
-      "\\1",
-      sample
-      )) %>%
-  left_join(
-    group_info[,c("saksnr",
-                  "origin",
-                  "result",
-                  "group",
-                  "cfu_g_total")],
-            by = c("sample" = "saksnr")) %>%
-  filter(sample != "45-zymo-std-D6311_S73")
-
-strainge_summary <- strainge_data %>%
-  mutate(`pan%` = round(`pan%`, 4)) %>%
-  group_by(origin) %>%
-  summarise(mean = round(mean(`pan%`), 3),
-            median = round(median(`pan%`), 3),
-            sd = round(sd(`pan%`), 3),
-            range = paste0(min(`pan%`), " - ", max(`pan%`))) %>%
-  mutate(method = "StrainGE")
-
-write_delim(
-  strainge_summary,
-  here(
-    "results",
-    "tables",
-    "05_strainGE_summary.txt"
-  ),
-  delim = "\t"
-)
-
-# 03. Mapping with bbsplit ----
-seq_info <- read_delim(
-  here(
-    "data",
-    "seqkit",
-    "filtered_seqkit_stats_report.txt"
-    ),
-  delim = "\t"
-  ) %>%
-  filter(!grepl("zymo", file),
-         !grepl("R2", file)) %>%
-  mutate(file = basename(file),
-         file = sub(".+-(2020-01-.+)_S.+", "\\1", file)) %>%
-  select(file, num_seqs, sum_len)
-
-mapping_results <- get_data(
-  filepath = here(
-    "data",
-    "bbsplit",
-    "filtered"
-    ),
-  pattern = "ref_report.txt",
-  delim = "\t"
-) %>%
-  mutate(
-    ref = sub("_bbsplit_ref_report.txt", "", ref),
-    ref = sub(".+-(2020-01-.+)_.+", "\\1", ref),
-    reference = case_when(
-      `#name` == "GCA_000750555.1_ASM75055v1_genomic_masked" ~ "E. coli",
-      `#name` == "GCA_003812345.1_ASM381234v1_genomic_masked" ~ "C. freundii",
-      `#name` == "GCA_001518835.1_ASM151883v1_genomic_masked" ~ "L. adecarboxylata",
-      `#name` == "GCA_000770155.1_ASM77015v1_genomic_masked" ~ "E. cloacae",
-      `#name` == "GCA_013892435.1_ASM1389243v1_genomic_masked" ~ "E. fergusonii",
-      `#name` == "GCA_016767755.1_ASM1676775v1_genomic_masked" ~ "E. hormaechei",
-      `#name` == "GCA_015137465.1_ASM1513746v1_genomic_masked" ~ "E. kobei",
-      `#name` == "GCA_000006945.2_ASM694v2_genomic_masked" ~ "S. enterica",
-      `#name` == "GCA_016726285.1_ASM1672628v1_genomic_masked" ~ "S. boydii",
-      `#name` == "GCF_000009885.1_ASM988v1_genomic_masked" ~ "K. pneumoniae",
-      `#name` == "GCF_016699485.2_bGalGal1.mat.broiler.GRCg7b_genomic_masked" ~ "Broiler",
-      `#name` == "GCA_002984395.1_ASM298439v1_genomic_masked" ~ "K. oxytoca",
-      `#name` == "GCA_007632255.1_ASM763225v1_genomic_masked" ~ "K. aerogenes",
-      `#name` == "GCA_013305245.1_ASM1330524v1_genomic_masked" ~ "K. variicola",
-      `#name` == "GCA_016415705.1_ASM1641570v1_genomic_masked" ~ "K. quasipneumoniae",
-      `#name` == "GCF_000146605.3_Turkey_5.1_genomic_masked" ~ "Turkey",
-      `#name` == "hg19_main_mask_ribo_animal_allplant_allfungus_masked" ~ "Human"
-    )
-  ) %>%
-  left_join(seq_info, by = c("ref" = "file")) %>%
-  filter(!grepl("zymo", ref)) %>%
-  select(
-    ref,
-    reference,
-    unambiguousReads,
-    ambiguousReads,
-    assignedReads,
-    num_seqs,
-    sum_len
-  ) %>%
-  mutate(perc_reads_assigned = round(assignedReads/num_seqs* 100, 5)) %>%
-  left_join(group_info[,c("saksnr","origin")], by = c("ref" = "saksnr"))
-
-
-mapping_summary <- mapping_results %>%
-  filter(reference %in% c("K. pneumoniae",
-                          "K. aerogenes",
-                          "K. variicola",
-                          "K. oxytoca",
-                          "K. quasipneumoniae")) %>%
-  group_by(ref) %>%
-  mutate(mapped_reads = sum(assignedReads)) %>%
-  summarise_all(list(func_paste)) %>%
-  ungroup() %>%
-  select(ref, origin, num_seqs, sum_len, mapped_reads) %>%
-  mutate(mapped_reads = as.numeric(mapped_reads),
-         num_seqs = as.numeric(num_seqs)) %>%
-  mutate(perc_reads_assigned = round(mapped_reads/num_seqs* 100, 4)) %>%
-  group_by(origin) %>%
-  summarise(mean = round(mean(perc_reads_assigned), 3),
-            median = round(median(perc_reads_assigned), 3),
-            sd = round(sd(perc_reads_assigned), 3),
-            range = paste0(min(perc_reads_assigned), 
-                           " - ",
-                           max(perc_reads_assigned))) %>%
-  mutate(method = "Mapping")
-
-write_delim(
-  mapping_summary,
-  here(
-    "results",
-    "tables",
-    "05_mapping_summary.txt"
-  ),
-  delim = "\t"
-)
-
-
-# 04. Statistics ----
-
-wilcox.test(Abundance ~ origin,
-            data = kraken_results,
-            alternative = "two.sided")
-
-wilcox.test(`pan%` ~ origin,
-            data = strainge_results,
-            alternative = "two.sided")
-
-wilcox.test(perc_reads_assigned ~ origin,
-            data = mapping_results,
-            alternative = "two.sided")
-
-# 05. Figure ----
-## Define palette
-palette <- c("Broiler" = colorspace::lighten("#006c89", 
-                                             amount = 0.5),
-             "Turkey" = colorspace::lighten("#3d6721", 
-                                            amount = 0.5))
-
-## Kraken results
-p_kraken <- ggplot(kraken_results, 
-                   aes(origin, Abundance)) +
-  geom_violin(aes(fill = origin),
-              trim = FALSE) +
-  stat_boxplot(geom = "errorbar", width = 0.05) +
-  geom_boxplot(width = 0.05) +
-  labs(y = "Relative abundance (%)",
-       title = "Kraken") +
-  scale_fill_manual(values = palette) +
+p_klebs_species <- ggplot(klebsiella_species, aes(reorder(Rank7, -Abundance), Abundance)) +
+  stat_boxplot(geom = "errorbar", width = 0.5) +
+  geom_boxplot(fill = "grey80") +
   theme_bw() +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.3, face = "italic"),
         axis.title.x = element_blank(),
-        legend.title = element_blank(),
-        legend.position = "none",
-        panel.grid = element_blank())
+        panel.grid = element_blank()) +
+  facet_wrap(~result)
 
-## StrainGE results
-p_strainge <- ggplot(strainge_data, 
-                     aes(origin, `pan%`)) +
-  geom_violin(aes(fill = origin),
-              trim = FALSE) +
-  stat_boxplot(geom = "errorbar", width = 0.05) +
-  geom_boxplot(width = 0.05) +
-  labs(y = "Pan%",
-       title = "StrainGE") +
-  scale_fill_manual(values = palette) +
-  theme_bw() +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        axis.title.x = element_blank(),
-        legend.title = element_blank(),
-        legend.position = "none",
-        panel.grid = element_blank())
-
-## Mapping results
-p_mapping <- ggplot(mapping_results, 
-                    aes(origin, perc_reads_assigned)) +
-  geom_violin(aes(fill = origin),
-              trim = FALSE) +
-  stat_boxplot(geom = "errorbar", width = 0.05) +
-  geom_boxplot(width = 0.05) +
-  labs(y = "Percent (%) mapped reads",
-       title = "Mapping") +
-  scale_fill_manual(values = palette) +
-  theme_bw() +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        axis.title.x = element_blank(),
-        legend.title = element_blank(),
-        panel.grid = element_blank())
-
-
-## Combine plots
-
-stats_table <- rbind(kraken_summary,
-                     strainge_summary,
-                     mapping_summary) %>%
-  select(method, everything(), -range) %>%
-  rename("Method" = method,
-         "Host" = origin,
-         "Mean" = mean,
-         "Median" = median,
-         "SD" = sd)
-
-summary_table <- ggtexttable(stats_table,
-            rows = NULL,
-            theme = ttheme("blank")) %>%
-  tab_add_hline(at.row = c(1, 2), 
-                row.side = "top", 
-                linewidth = 3, 
-                linetype = 1) %>%
-  tab_add_hline(at.row = c(7),
-                row.side = "bottom",
-                linewidth = 3,
-                linetype = 1)
-
-p_all <- p_kraken + p_strainge + p_mapping + summary_table +
-  plot_layout(
-    nrow = 2,
-    ncol = 2,
-    guides = "collect")
 
 ggsave(
   here(
     "results",
     "figures",
-    "05_abundance_estimations.png"
+    "06_klebs_species.png"
   ),
-  p_all,
+  p_klebs_species,
   device = "png",
   units = "cm",
   dpi = 600,
-  height = 18,
-  width = 18
+  height = 15,
+  width = 20
 )
 
+
+# 02. Differential abundance analysis ----
+## Import data
+bracken_data <- import_biom(
+  here(
+    "data",
+    "kraken_biom",
+    "bracken_filtered.biom"
+  )
+)
+
+colnames(tax_table(bracken_data)) <-
+  c("kingdom",
+    "phylum",
+    "class",
+    "order",
+    "family",
+    "genus",
+    "species")
+
+bracken_bact <- subset_taxa(bracken_data, kingdom == "k__Bacteria")
+
+sample_data <- as.data.frame(bracken_bact@otu_table) %>%
+  t() %>%
+  as.data.frame %>%
+  rownames_to_column("id") %>%
+  select(id)
+
+seq_ids <- sample_data$id
+metadata_ids <- group_info$saksnr
+
+matches_seq_ids <- c()
+matches_metadata_ids <- c()
+
+for (i in seq_ids) {
+  for (j in metadata_ids) {
+    if (grepl(j, i)) {
+      matches_seq_ids <- c(matches_seq_ids, i)
+      matches_metadata_ids <- c(matches_metadata_ids, j)
+    }
+  }
+}
+
+sample_df <- data.frame(id = matches_seq_ids,
+                        saksnr = matches_metadata_ids) %>%
+  left_join(group_info[,c("saksnr","origin","result","group")]) %>%
+  select(-saksnr) %>%
+  column_to_rownames("id")
+
+bracken_bact@sam_data <- sample_data(sample_df)
+
+## Run differential abundance analysis 
+bracken_norm_order <- ancombc2(
+  bracken_bact,
+  assay_name = "counts",
+  fix_formula = "origin",
+  tax_level = "order"
+)
+
+bracken_clean_tax <- psmelt(bracken_bact) %>%
+  select(OTU, contains("Rank")) %>%
+  group_by(OTU) %>%
+  summarise_all(list(func_paste))
+
+ancom_de_results <- bracken_norm_order$res %>%
+  filter(`diff_(Intercept)` == TRUE | 
+           diff_originTurkey == TRUE) %>%
+  mutate(taxon = sub("o__", "", taxon)) %>%
+  t() %>%
+  as.data.frame %>%
+  rownames_to_column("type") %>%
+  mutate(host = case_when(
+    grepl("intercept", ignore.case = T, type) ~ "broiler",
+    grepl("turkey", ignore.case = T, type) ~ "turkey"
+  ),
+    type = sub("_.+", "", type),
+  host = ifelse(is.na(host), "host", host)) %>%
+  row_to_names(row_number = 1,
+               remove_rows_above = FALSE) %>%
+  rename("type" = taxon) %>%
+  pivot_longer(cols = -c(type,host),
+               names_to = "species",
+               values_to = "value") %>%
+  pivot_wider(names_from = "type",
+              values_from = "value") %>%
+  mutate_at(vars(-c(host, species, diff)),
+            ~as.numeric(.)) %>%
+  filter(!species %in% c("_4","_5")) %>%
+  mutate(sign = case_when(
+    q < 0.01 ~ "**",
+    q < 0.05 ~ "*"
+  ),
+  pos = ifelse(
+    lfc > 0, lfc + se + 0.08, lfc - se - 0.08
+  ),
+  host = ifelse(host == "broiler", "Broiler", "Turkey"))
+
+p_diff_abund <- ggplot(ancom_de_results, aes(lfc, reorder(species,lfc), fill = host)) +
+  geom_bar(color = "black",
+           stat = "identity",
+           linewidth = 0.3) +
+  geom_errorbar(aes(xmin = lfc - se, xmax = lfc + se),
+                width = 0.6,
+                linewidth = 0.3) +
+  geom_text(aes(label = sign,
+                x = pos),
+            size = 3,
+            color = "#e31a1c",
+            vjust = 0.75) +
+  scale_fill_manual(values = palette) +
+  labs(x = "Log fold change",
+       y = "Orders",
+       title = "C") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.title = element_blank(),
+        legend.key.size = unit(0.5, 'cm'),
+        axis.text.y = element_text(size = 4),
+        axis.text.x = element_text(size = 6),
+        axis.title = element_text(size = 8),
+        legend.text = element_text(size = 6))
+
+load(
+  here(
+    "results",
+    "RData",
+    "alpha_plot.rdata"
+  )
+)
+
+load(
+  here(
+    "results",
+    "RData",
+    "beta_plot.rdata"
+  )
+)
+
+p_alpha_nolegend <- p_alpha +
+  theme(legend.position = "none")
+
+p_beta_nolegend <- p_beta +
+  theme(legend.position = "none")
+
+
+p_complete <- (p_alpha / p_beta) | p_diff_abund +
+  plot_layout(guides = "collect")
+
+p_complete_nolegend <- (p_alpha_nolegend / p_beta_nolegend) | p_diff_abund +
+  plot_layout(guides = "collect")
+
+
+ggsave(
+  here(
+    "results",
+    "figures",
+    "06_alpha_beta_diff_order.png"
+  ),
+  p_complete,
+  device = "png",
+  units = "cm",
+  dpi = 600,
+  height = 12,
+  width = 15
+)
+
+ggsave(
+  here(
+    "results",
+    "figures",
+    "06_alpha_beta_diff_order_nolegend.png"
+  ),
+  p_complete_nolegend,
+  device = "png",
+  units = "cm",
+  dpi = 600,
+  height = 12,
+  width = 15
+)
